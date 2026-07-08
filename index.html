@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Syllable Feature Analysis</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: #f0f2f5; color: #1a1a2e; padding: 24px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header {
+    text-align: center; padding: 32px 16px; margin-bottom: 32px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px; color: white; box-shadow: 0 8px 32px rgba(102,126,234,0.3);
+  }
+  header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
+  header p { font-size: 15px; opacity: 0.9; }
+  .card {
+    background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    margin-bottom: 24px; overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #e8e8ec; flex-wrap: wrap; gap: 10px;
+  }
+  .card-header h2 {
+    font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+  }
+  .emoji-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%; font-size: 18px;
+  }
+  .audio-wrapper { flex: 0 1 auto; }
+  .audio-wrapper audio { height: 40px; border-radius: 8px; }
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap canvas {
+    width: 100%; display: block; cursor: crosshair;
+  }
+  .summary-row {
+    display: flex; gap: 16px; padding: 12px 20px; background: #f8f9ff;
+    border-bottom: 1px solid #e8e8ec; flex-wrap: wrap; align-items: center;
+  }
+  .stat {
+    display: flex; align-items: center; gap: 6px; font-size: 13px; color: #555;
+  }
+  .stat .value { font-weight: 600; color: #1a1a2e; min-width: 30px; }
+  .card-body { padding: 0; overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+  }
+  thead { background: #f8f9ff; }
+  th {
+    padding: 10px 14px; text-align: left; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px; color: #666;
+    border-bottom: 2px solid #e8e8ec; white-space: nowrap;
+  }
+  td {
+    padding: 10px 14px; border-bottom: 1px solid #f0f0f5; white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8f9ff; }
+  .syllable-cell { font-weight: 600; color: #333; }
+  .num { font-variant-numeric: tabular-nums; }
+  @media (max-width: 768px) {
+    body { padding: 12px; }
+    header { padding: 24px 12px; }
+    header h1 { font-size: 22px; }
+    .card-header { padding: 12px; flex-direction: column; align-items: flex-start; }
+    .audio-wrapper { width: 100%; }
+    .audio-wrapper audio { width: 100%; }
+    th, td { padding: 6px 8px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1> Syllable Feature Analysis</h1>
+    <p>Interactive F₀ and loudness contours synced to audio playback</p>
+  </header>
+  <div id="files"></div>
+</div>
+
+<script>
+const ALL_DATA = {
+  "happy.wav": {"file": "happy.wav", "transcript": "She is now choosing skirt to wear.", "duration": 2.58, "baseline_f0": 281.26, "hop_length": 512, "sample_rate": 16000, "f0": [null,null,null,null,null,null,null,null,null,348.94,331.66,324.18,326.59,334.73,335.29,328.51,294.38,279.98,287.18,293.63,300.57,299.93,310.13,326.37,338.52,343.46,347.23,367.84,398.89,null,345.47,299.35,278.99,254.96,200.52,282.51,278.04,256.14,253.9,255.15,219.24,270.5,null,null,null,null,305.44,280.01,299.87,320.78,309.89,316.69,309.65,293.39,null,263.97,262.6,242.45,218.82,212.78,234.51,238.5,249.74,267.43,285.77,289.1,259.78,226.14,209.82,206.47,205.33,205.53,211.63,230.27,238.71,228.15,160.65,null,null,null,null], "f0_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336,2.368,2.4,2.432,2.464,2.496,2.528,2.56], "db": [-72.11,-69.95,-68.09,-66.16,-55.56,-44.34,-37.75,-34.59,-29.01,-23.55,-21.25,-19.77,-19.2,-19.83,-21.03,-23.22,-26.08,-29.34,-29.77,-22.77,-19.59,-18.43,-17.82,-18.7,-21.09,-23.83,-28.54,-36.62,-37.04,-28.62,-26.83,-26.36,-26.3,-29.22,-30.56,-29.44,-28.62,-27.56,-28.19,-30.31,-32.05,-35.41,-38.22,-39.02,-38.98,-25.89,-17.85,-16.72,-16.56,-17.07,-22.36,-30.47,-40.06,-39.08,-29.31,-26.02,-25.65,-25.66,-26.82,-25.64,-23.13,-21.64,-20.42,-19.66,-18.91,-17.98,-17.62,-17.88,-18.53,-19.97,-21.7,-23.59,-26.43,-29.7,-34.77,-45.21,-57.81,-60.67,-62.48,-65.35,-66.71], "db_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336,2.368,2.4,2.432,2.464,2.496,2.528,2.56], "syllables": [{"syllable":"She","raw_db":-22.5548,"emphasis":0.4813,"pause_ms":81.0,"loudness":0.0},{"syllable":"is","raw_db":-27.711,"emphasis":0.0933,"pause_ms":61.0,"loudness":0.0},{"syllable":"now","raw_db":-19.9118,"emphasis":0.4423,"pause_ms":61.0,"loudness":0.0},{"syllable":"choos","raw_db":-29.0317,"emphasis":0.8364,"pause_ms":0.0,"loudness":0.0},{"syllable":"ing","raw_db":-29.495,"emphasis":0.0089,"pause_ms":81.0,"loudness":0.0},{"syllable":"skirt","raw_db":-26.4986,"emphasis":0.281,"pause_ms":61.0,"loudness":0.0},{"syllable":"to","raw_db":-25.7776,"emphasis":0.0,"pause_ms":41.0,"loudness":0.0},{"syllable":"wear","raw_db":-19.5292,"emphasis":0.0558,"pause_ms":403.0,"loudness":0.0}], "syllable_intervals": [{"start":0.242,"end":0.403,"syllable":"She","has_vowel":true},{"start":0.484,"end":0.564,"syllable":"is","has_vowel":true},{"start":0.625,"end":0.826,"syllable":"now","has_vowel":true},{"start":0.887,"end":1.048,"syllable":"choos","has_vowel":true},{"start":1.048,"end":1.29,"syllable":"ing","has_vowel":true},{"start":1.371,"end":1.693,"syllable":"skirt","has_vowel":true},{"start":1.754,"end":1.854,"syllable":"to","has_vowel":true},{"start":1.895,"end":2.177,"syllable":"wear","has_vowel":true}]},
+  "sad.wav": {"file": "sad.wav", "transcript": "She is now choosing skirt to wear.", "duration": 3.34, "baseline_f0": 129.33, "hop_length": 512, "sample_rate": 16000, "f0": [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,195.95,269.68,188.71,167.53,169.13,163.52,157.56,141.82,130.84,128.22,133.67,141.26,null,147.43,144.95,145.45,146.53,144.33,126.43,124.14,138.02,164.71,277.86,null,285.94,215.08,184.29,157.83,156.84,151.5,151.22,141.93,129.7,117.46,124.42,135.57,129.5,122.62,117.7,106.16,null,null,null,null,null,null,null,null,null,null,113.29,129.16,121.3,117.75,115.62,111.01,104.65,null,null,null,null,null,null,null,99.94,94.82,91.89,92.69,94.63,94.17,92.05,88.93,88.94,86.53,85.75,83.1,84.48,78.12,null,null,null,null,null,null,100.69,null,null,null,null], "f0_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336,2.368,2.4,2.432,2.464,2.496,2.528,2.56,2.592,2.624,2.656,2.688,2.72,2.752,2.784,2.816,2.848,2.88,2.912,2.944,2.976,3.008,3.04,3.072,3.104,3.136,3.168,3.2,3.232,3.264,3.296,3.328], "db": [-66.89,-65.35,-64.17,-64.84,-65.4,-66.32,-67.64,-68.76,-69.96,-62.68,-47.91,-38.12,-34.27,-31.01,-28.97,-28.2,-28.0,-25.82,-22.93,-20.22,-18.13,-18.0,-18.74,-20.51,-25.31,-28.45,-28.34,-26.05,-23.49,-20.46,-18.5,-17.89,-17.75,-19.23,-22.03,-25.23,-29.3,-27.16,-25.63,-25.16,-26.32,-26.56,-26.09,-25.21,-24.27,-24.36,-25.39,-27.01,-28.88,-28.49,-25.41,-24.07,-23.53,-23.74,-25.89,-27.77,-28.24,-28.01,-26.68,-25.99,-25.96,-26.53,-28.01,-30.35,-34.99,-39.4,-25.19,-22.13,-20.5,-19.3,-20.06,-21.6,-23.84,-29.21,-38.32,-53.36,-39.56,-38.47,-35.5,-31.06,-29.77,-28.72,-27.27,-26.38,-25.1,-24.32,-24.11,-24.47,-25.38,-26.05,-27.09,-28.69,-30.61,-34.52,-45.76,-55.09,-57.68,-60.98,-63.47,-65.24,-66.44,-67.36,-68.29,-70.68,-72.87], "db_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336,2.368,2.4,2.432,2.464,2.496,2.528,2.56,2.592,2.624,2.656,2.688,2.72,2.752,2.784,2.816,2.848,2.88,2.912,2.944,2.976,3.008,3.04,3.072,3.104,3.136,3.168,3.2,3.232,3.264,3.296,3.328], "syllables": [{"syllable":"She","raw_db":-23.0193,"emphasis":1.0,"pause_ms":80.0,"loudness":0.0},{"syllable":"is","raw_db":-24.7559,"emphasis":0.193,"pause_ms":40.0,"loudness":0.0},{"syllable":"now","raw_db":-20.5732,"emphasis":0.2798,"pause_ms":141.0,"loudness":0.0},{"syllable":"choos","raw_db":-25.4587,"emphasis":1.0,"pause_ms":0.0,"loudness":0.0},{"syllable":"ing","raw_db":-26.0876,"emphasis":0.1949,"pause_ms":201.0,"loudness":0.0},{"syllable":"skirt","raw_db":-29.0965,"emphasis":0.0,"pause_ms":81.0,"loudness":0.0},{"syllable":"to","raw_db":-31.2625,"emphasis":0.0,"pause_ms":60.0,"loudness":0.0},{"syllable":"wear","raw_db":-25.218,"emphasis":0.0,"pause_ms":443.0,"loudness":0.0}], "syllable_intervals": [{"start":0.483,"end":0.644,"syllable":"She","has_vowel":true},{"start":0.724,"end":0.825,"syllable":"is","has_vowel":true},{"start":0.865,"end":1.127,"syllable":"now","has_vowel":true},{"start":1.268,"end":1.477,"syllable":"choos","has_vowel":true},{"start":1.477,"end":1.791,"syllable":"ing","has_vowel":true},{"start":1.992,"end":2.414,"syllable":"skirt","has_vowel":true},{"start":2.495,"end":2.616,"syllable":"to","has_vowel":true},{"start":2.676,"end":2.897,"syllable":"wear","has_vowel":true}]},
+  "neutral.wav": {"file": "neutral.wav", "transcript": "I chose the right way.", "duration": 2.36, "baseline_f0": 165.24, "hop_length": 512, "sample_rate": 16000, "f0": [null,null,null,null,null,null,null,null,null,181.47,229.82,162.42,134.96,124.69,125.27,122.75,null,null,null,null,null,null,185.8,174.13,179.5,185.7,192.65,194.5,193.84,195.19,198.39,196.56,193.04,179.32,187.64,197.01,192.3,191.97,207.47,160.68,125.12,120.33,117.98,115.51,116.61,130.41,142.61,152.49,166.15,172.4,188.17,196.62,175.04,180.66,164.33,152.37,146.3,138.94,128.03,115.68,106.55,101.97,103.38,114.59,117.76,null,null,null,null,null,null,null,null,null], "f0_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336], "db": [-74.29,-73.09,-71.52,-72.12,-72.43,-72.99,-73.07,-69.96,-63.44,-59.87,-41.93,-32.85,-28.74,-26.79,-26.49,-27.45,-30.09,-36.48,-40.34,-35.62,-32.92,-32.29,-25.09,-20.13,-17.75,-16.75,-16.57,-17.54,-19.37,-21.15,-23.53,-26.66,-30.34,-34.05,-37.67,-42.75,-45.2,-50.56,-38.97,-34.92,-32.33,-31.33,-31.5,-30.95,-27.54,-23.76,-21.51,-20.84,-21.43,-23.37,-27.82,-37.4,-51.81,-37.36,-29.03,-24.98,-21.49,-21.06,-21.59,-22.97,-29.42,-36.45,-42.64,-49.66,-54.36,-57.78,-60.67,-62.4,-64.48,-66.93,-68.25,-69.7,-70.98,-74.51], "db_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336], "syllables": [{"syllable":"I","raw_db":-30.1265,"emphasis":0.0,"pause_ms":121.0,"loudness":0.0},{"syllable":"chose","raw_db":-24.2069,"emphasis":0.4012,"pause_ms":142.0,"loudness":0.0},{"syllable":"the","raw_db":-31.7201,"emphasis":0.0,"pause_ms":60.0,"loudness":0.0},{"syllable":"right","raw_db":-28.4905,"emphasis":0.3799,"pause_ms":81.0,"loudness":0.0},{"syllable":"way","raw_db":-25.4249,"emphasis":0.0,"pause_ms":403.0,"loudness":0.0}], "syllable_intervals": [{"start":0.444,"end":0.545,"syllable":"I","has_vowel":true},{"start":0.666,"end":1.109,"syllable":"chose","has_vowel":true},{"start":1.251,"end":1.372,"syllable":"the","has_vowel":true},{"start":1.432,"end":1.674,"syllable":"right","has_vowel":true},{"start":1.755,"end":1.957,"syllable":"way","has_vowel":true}]},
+  "surprise.wav": {"file": "surprise.wav", "transcript": "I chose the right way.", "duration": 2.64, "baseline_f0": 163.06, "hop_length": 512, "sample_rate": 16000, "f0": [null,null,null,null,null,null,null,null,null,null,241.76,192.32,134.7,136.77,144.85,148.85,148.3,144.74,134.96,130.4,null,null,null,null,null,null,null,null,null,168.19,142.13,138.17,138.93,142.85,152.65,164.24,180.72,294.12,261.45,220.09,172.87,177.57,194.97,148.08,211.98,148.14,124.97,114.67,106.9,105.52,108.8,116.18,118.85,122.95,129.17,146.98,168.5,164.68,158.02,161.88,167.88,172.47,239.72,247.89,null,269.82,293.7,309.72,292.67,253.73,229.15,215.24,233.36,216.19,null,null,null,null,null,null,null,null,null], "f0_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336,2.368,2.4,2.432,2.464,2.496,2.528,2.56,2.592,2.624], "db": [-75.86,-74.94,-74.06,-73.52,-72.42,-71.39,-71.33,-70.36,-71.14,-70.55,-32.61,-26.08,-22.83,-20.08,-19.0,-19.11,-19.8,-22.26,-25.82,-29.98,-41.7,-43.64,-34.62,-30.15,-28.0,-26.57,-26.54,-26.94,-21.85,-19.8,-17.74,-16.52,-16.87,-17.17,-18.38,-19.98,-21.44,-23.64,-25.97,-28.88,-30.71,-33.13,-35.28,-32.6,-25.36,-23.86,-23.33,-23.44,-26.13,-25.47,-22.54,-19.93,-18.03,-17.93,-18.65,-20.33,-24.66,-28.31,-31.37,-32.83,-29.52,-27.58,-26.51,-26.23,-26.7,-27.41,-28.31,-29.35,-30.02,-31.8,-33.52,-35.6,-48.98,-59.72,-64.14,-67.22,-70.26,-70.65,-70.43,-70.95,-70.89,-71.87,-75.8], "db_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92,1.952,1.984,2.016,2.048,2.08,2.112,2.144,2.176,2.208,2.24,2.272,2.304,2.336,2.368,2.4,2.432,2.464,2.496,2.528,2.56,2.592,2.624], "syllables": [{"syllable":"I","raw_db":-24.4644,"emphasis":0.0,"pause_ms":201.0,"loudness":0.0},{"syllable":"chose","raw_db":-23.5791,"emphasis":1.0,"pause_ms":81.0,"loudness":0.0},{"syllable":"the","raw_db":-24.1895,"emphasis":0.0,"pause_ms":60.0,"loudness":0.0},{"syllable":"right","raw_db":-21.1205,"emphasis":0.0667,"pause_ms":61.0,"loudness":0.0},{"syllable":"way","raw_db":-27.7023,"emphasis":1.0,"pause_ms":464.0,"loudness":0.0}], "syllable_intervals": [{"start":0.504,"end":0.625,"syllable":"I","has_vowel":true},{"start":0.826,"end":1.35,"syllable":"chose","has_vowel":true},{"start":1.431,"end":1.552,"syllable":"the","has_vowel":true},{"start":1.612,"end":1.854,"syllable":"right","has_vowel":true},{"start":1.915,"end":2.176,"syllable":"way","has_vowel":true}]},
+  "angry.wav": {"file": "angry.wav", "transcript": "I choose the right way.", "duration": 1.94, "baseline_f0": 177.27, "hop_length": 512, "sample_rate": 16000, "f0": [null,null,null,null,null,null,null,null,null,null,211.07,138.91,146.79,152.49,145.37,154.73,152.73,127.97,215.98,208.97,256.83,250.7,241.81,213.58,186.45,166.93,177.27,199.49,182.41,166.8,149.41,139.83,160.97,218.06,244.62,289.7,311.89,304.73,247.44,214.36,197.58,180.96,197.1,184.25,169.67,156.9,148.08,137.12,129.63,120.21,115.94,152.7,121.2,null,null,null,null,null,null,null,null], "f0_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92], "db": [-76.99,-76.66,-75.97,-79.03,-78.2,-77.11,-77.48,-77.7,-77.54,-57.97,-37.17,-33.82,-32.29,-32.25,-33.92,-37.0,-37.0,-34.66,-32.45,-29.84,-29.08,-28.56,-28.96,-30.86,-33.38,-30.73,-28.1,-27.3,-27.1,-28.93,-33.06,-31.83,-21.88,-16.98,-16.6,-16.67,-18.07,-26.95,-38.6,-37.56,-29.77,-21.96,-20.55,-20.3,-20.64,-24.55,-29.24,-32.45,-34.19,-37.19,-42.81,-51.85,-60.27,-69.08,-73.12,-75.87,-77.28,-78.9,-79.08,-79.61,-80.69], "db_time": [0,0.032,0.064,0.096,0.128,0.16,0.192,0.224,0.256,0.288,0.32,0.352,0.384,0.416,0.448,0.48,0.512,0.544,0.576,0.608,0.64,0.672,0.704,0.736,0.768,0.8,0.832,0.864,0.896,0.928,0.96,0.992,1.024,1.056,1.088,1.12,1.152,1.184,1.216,1.248,1.28,1.312,1.344,1.376,1.408,1.44,1.472,1.504,1.536,1.568,1.6,1.632,1.664,1.696,1.728,1.76,1.792,1.824,1.856,1.888,1.92], "syllables": [{"syllable":"I","raw_db":-34.3878,"emphasis":0.0,"pause_ms":61.0,"loudness":0.0},{"syllable":"choose","raw_db":-30.4796,"emphasis":0.8976,"pause_ms":41.0,"loudness":0.0},{"syllable":"the","raw_db":-27.7773,"emphasis":0.2507,"pause_ms":81.0,"loudness":0.0},{"syllable":"right","raw_db":-24.4921,"emphasis":1.0,"pause_ms":81.0,"loudness":0.0},{"syllable":"way","raw_db":-27.3872,"emphasis":0.2237,"pause_ms":364.0,"loudness":0.0}], "syllable_intervals": [{"start":0.404,"end":0.485,"syllable":"I","has_vowel":true},{"start":0.546,"end":0.808,"syllable":"choose","has_vowel":true},{"start":0.849,"end":0.95,"syllable":"the","has_vowel":true},{"start":1.031,"end":1.253,"syllable":"right","has_vowel":true},{"start":1.334,"end":1.576,"syllable":"way","has_vowel":true}]}
+};
+
+const FILE_NAMES = ["happy.wav", "sad.wav", "neutral.wav", "surprise.wav", "angry.wav"];
+const EMOTION_ICONS = { "happy.wav": "😊", "sad.wav": "😢", "neutral.wav": "😐", "surprise.wav": "😮", "angry.wav": "😠" };
+const COLORS = ["#e8f4f8", "#fff3e0", "#e8f5e9", "#fce4ec", "#f3e5f5", "#e0f2f1"];
+
+let animFrameId = null;
+
+function fmt(v, d) { return v.toFixed(d); }
+
+function renderChart(canvas, data, currentTime) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const pad = { top: 28, bottom: 22, left: 52, right: 16 };
+  const midH = (H - pad.top - pad.bottom) / 2;
+  const plotW = W - pad.left - pad.right;
+  const dur = data.duration;
+  const tScale = plotW / Math.max(dur, 0.1);
+  const intervals = data.syllable_intervals;
+
+  function drawPanel(y0, panelH, drawFn) {
+    const x0 = pad.left;
+    ctx.fillStyle = '#fcfcfd';
+    ctx.fillRect(x0, y0, plotW, panelH);
+    for (let i = 0; i < intervals.length; i++) {
+      const s = intervals[i].start, e = intervals[i].end;
+      const ix = x0 + s * tScale;
+      const iw = Math.max((e - s) * tScale, 1);
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.fillRect(ix, y0, iw, panelH);
+      ctx.fillStyle = '#555';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(intervals[i].syllable, ix + iw / 2, y0 + 2);
+    }
+    ctx.strokeStyle = '#eee';
+    ctx.lineWidth = 0.5;
+    for (let t = 0; t <= dur; t += 0.2) {
+      const gx = x0 + t * tScale;
+      ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + panelH); ctx.stroke();
+    }
+    drawFn(ctx, x0, y0, tScale, panelH);
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 3]);
+    for (const inv of intervals) {
+      const bx = x0 + inv.start * tScale;
+      ctx.beginPath(); ctx.moveTo(bx, y0); ctx.lineTo(bx, y0 + panelH); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if (intervals.length) {
+      const bx = x0 + intervals[intervals.length - 1].end * tScale;
+      ctx.beginPath(); ctx.moveTo(bx, y0); ctx.lineTo(bx, y0 + panelH); ctx.stroke();
+    }
+    if (currentTime > 0) {
+      const px = x0 + currentTime * tScale;
+      ctx.strokeStyle = '#e53935';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y0 + panelH); ctx.stroke();
+    }
+  }
+
+  // F0 panel
+  drawPanel(pad.top, midH, (ctx, x0, y0, tScale, pH) => {
+    const f0 = data.f0;
+    const ft = data.f0_time;
+    const bl = data.baseline_f0;
+    if (!f0 || f0.length === 0) return;
+    let fMin = 50, fMax = 400;
+    const voiced = f0.filter(v => v !== null);
+    if (voiced.length > 1) {
+      fMin = Math.max(0, Math.min(...voiced) - 30);
+      fMax = Math.max(...voiced) + 30;
+    }
+    const fRange = fMax - fMin || 1;
+    function fY(hz) { return y0 + pH - ((hz - fMin) / fRange) * pH; }
+    ctx.strokeStyle = '#e53935';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    const blY = fY(bl);
+    ctx.beginPath(); ctx.moveTo(x0, blY); ctx.lineTo(x0 + plotW, blY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#e53935';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('F\u2080 base ' + fmt(bl, 0) + ' Hz', x0 + 2, blY - 1);
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < f0.length; i++) {
+      if (f0[i] === null) { started = false; continue; }
+      const fx = x0 + ft[i] * tScale;
+      const fy = fY(f0[i]);
+      if (!started) { ctx.moveTo(fx, fy); started = true; }
+      else { ctx.lineTo(fx, fy); }
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#666';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const yv of [fMin, (fMin + fMax) / 2, fMax]) {
+      const yy = fY(yv);
+      ctx.fillText(Math.round(yv).toString(), x0 - 4, yy);
+      ctx.strokeStyle = '#eee';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + plotW, yy); ctx.stroke();
+    }
+    ctx.save();
+    ctx.translate(10, y0 + pH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('F\u2080 (Hz)', 0, 0);
+    ctx.restore();
+    for (let i = 0; i < intervals.length; i++) {
+      const inv = intervals[i];
+      const sx = x0 + inv.start * tScale;
+      const sw = Math.max((inv.end - inv.start) * tScale, 1);
+      const syl = data.syllables[i];
+      if (!syl) continue;
+      ctx.fillStyle = '#e53935';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText('e=' + fmt(syl.emphasis, 2), sx + sw / 2, y0 + pH - 2);
+    }
+  });
+
+  // dB panel
+  drawPanel(pad.top + midH, midH, (ctx, x0, y0, tScale, pH) => {
+    const db = data.db;
+    const dt = data.db_time;
+    if (!db || db.length === 0) return;
+    let dBMin = Math.min(...db) - 3;
+    let dBMax = Math.max(...db) + 3;
+    const dBRange = dBMax - dBMin || 1;
+    function dBY(v) { return y0 + pH - ((v - dBMin) / dBRange) * pH; }
+    const meanDB = db.reduce((a, b) => a + b, 0) / db.length;
+    ctx.strokeStyle = '#e53935';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    const mY = dBY(meanDB);
+    ctx.beginPath(); ctx.moveTo(x0, mY); ctx.lineTo(x0 + plotW, mY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#e53935';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('mean ' + fmt(meanDB, 1) + ' dB', x0 + 2, mY + 1);
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < db.length; i++) {
+      const fx = x0 + dt[i] * tScale;
+      const fy = dBY(db[i]);
+      if (i === 0) ctx.moveTo(fx, fy);
+      else ctx.lineTo(fx, fy);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#666';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const yv of [dBMin, (dBMin + dBMax) / 2, dBMax]) {
+      const yy = dBY(yv);
+      ctx.fillText(fmt(yv, 0), x0 - 4, yy);
+      ctx.strokeStyle = '#eee';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + plotW, yy); ctx.stroke();
+    }
+    ctx.save();
+    ctx.translate(10, y0 + pH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('RMS (dB)', 0, 0);
+    ctx.restore();
+    for (let i = 0; i < intervals.length; i++) {
+      const inv = intervals[i];
+      const sx = x0 + inv.start * tScale;
+      const sw = Math.max((inv.end - inv.start) * tScale, 1);
+      const syl = data.syllables[i];
+      if (!syl) continue;
+      ctx.fillStyle = '#16a34a';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText('l=' + fmt(syl.loudness, 2), sx + sw / 2, y0 + 2);
+    }
+  });
+
+  // time labels
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let t = 0; t <= dur; t += 0.2) {
+    const tx = pad.left + t * tScale;
+    if (Math.abs(t - Math.round(t)) < 0.01 || Math.abs(t - Math.round(t * 2) / 2) < 0.01) {
+      ctx.fillText(t.toFixed(1) + 's', tx, H - 18);
+    }
+  }
+  if (currentTime > 0) {
+    ctx.fillStyle = '#e53935';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText('\u23F1 ' + currentTime.toFixed(2) + 's', W - 8, H - 2);
+  }
+}
+
+function setupCard(cardEl, data) {
+  const audio = cardEl.querySelector('audio');
+  const canvas = cardEl.querySelector('canvas');
+  if (!audio || !canvas) return;
+  let playing = false;
+  function tick() {
+    renderChart(canvas, data, audio.currentTime);
+    if (playing) animFrameId = requestAnimationFrame(tick);
+  }
+  audio.addEventListener('play', () => {
+    playing = true;
+    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+    tick();
+  });
+  audio.addEventListener('pause', () => {
+    playing = false;
+    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+    renderChart(canvas, data, audio.currentTime);
+  });
+  audio.addEventListener('seeked', () => {
+    renderChart(canvas, data, audio.currentTime);
+    if (!audio.paused) { playing = true; if (animFrameId) cancelAnimationFrame(animFrameId); tick(); }
+  });
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left - 52;
+    const seekTime = Math.max(0, (x / (rect.width - 52 - 16)) * data.duration);
+    audio.currentTime = seekTime;
+  });
+  renderChart(canvas, data, 0);
+}
+
+// global normalization and build
+(function() {
+  const allRawDb = [];
+  for (const fname of FILE_NAMES) {
+    for (const s of ALL_DATA[fname].syllables) allRawDb.push(s.raw_db);
+  }
+  const lo = Math.min(...allRawDb);
+  const hi = Math.max(...allRawDb);
+  const rng = hi - lo;
+  for (const fname of FILE_NAMES) {
+    for (const s of ALL_DATA[fname].syllables) {
+      s.loudness = rng > 0 ? +((s.raw_db - lo) / rng).toFixed(4) : 0;
+    }
+  }
+
+  const container = document.getElementById('files');
+  for (const fname of FILE_NAMES) {
+    const data = ALL_DATA[fname];
+    const base = fname.replace('.wav', '');
+    const icon = EMOTION_ICONS[fname] || '';
+    const rows = data.syllables;
+    const intv = data.syllable_intervals;
+    const avgLoud = rows.reduce((s, r) => s + r.loudness, 0) / rows.length;
+    const avgEmph = rows.reduce((s, r) => s + r.emphasis, 0) / rows.length;
+    const avgPause = rows.reduce((s, r) => s + r.pause_ms, 0) / rows.length;
+    const maxEmph = Math.max(...rows.map(r => r.emphasis));
+
+    let tableRows = rows.map((r, i) =>
+      '<tr><td class="syllable-cell">' + r.syllable + '</td>'
+      + '<td class="num">' + fmt(r.loudness, 4) + '</td>'
+      + '<td class="num">' + fmt(r.raw_db, 1) + ' dB</td>'
+      + '<td class="num">' + fmt(r.emphasis, 4) + '</td>'
+      + '<td class="num">' + fmt(r.pause_ms, 0) + 'ms</td>'
+      + '<td class="num">' + fmt(intv[i].start, 3) + 's \u2013 ' + fmt(intv[i].end, 3) + 's</td></tr>'
+    ).join('');
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML =
+      '<div class="card-header">'
+      + '<h2><span class="emoji-badge">' + icon + '</span> ' + base + '</h2>'
+      + '<div class="audio-wrapper"><audio controls preload="none" src="audio_files/' + fname + '"></audio></div>'
+      + '</div>'
+      + '<div class="chart-wrap"><canvas height="240" style="height:240px"></canvas></div>'
+      + '<div class="summary-row">'
+      + '<div class="stat">Avg Loudness: <span class="value">' + fmt(avgLoud, 4) + '</span></div>'
+      + '<div class="stat">Avg Emphasis: <span class="value">' + fmt(avgEmph, 4) + '</span></div>'
+      + '<div class="stat">Avg Pause: <span class="value">' + fmt(avgPause, 0) + 'ms</span></div>'
+      + '<div class="stat">Max Emphasis: <span class="value">' + fmt(maxEmph, 4) + '</span></div>'
+      + '<div class="stat">Baseline F\u2080: <span class="value">' + fmt(data.baseline_f0, 0) + ' Hz</span></div>'
+      + '<div class="stat">Global range: <span class="value">' + fmt(lo, 1) + ' dB \u2013 ' + fmt(hi, 1) + ' dB</span></div>'
+      + '</div>'
+      + '<div class="card-body"><table><thead><tr>'
+      + '<th>Syllable</th><th>Loudness</th><th>Raw dB</th><th>Emphasis</th><th>Pause</th><th>Interval</th>'
+      + '</tr></thead><tbody>' + tableRows + '</tbody></table></div></div>';
+    container.appendChild(card);
+    setupCard(card, data);
+  }
+})();
+</script>
+</body>
+</html>
